@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>パース分割線ジェネレーター</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' fill='%231a1a2e'/><g stroke='%237c6dfa' stroke-width='0.8' fill='none' opacity='0.9'><!-- 左VPからの放射線 --><line x1='2' y1='16' x2='32' y2='4'/><line x1='2' y1='16' x2='32' y2='10'/><line x1='2' y1='16' x2='32' y2='16'/><line x1='2' y1='16' x2='32' y2='22'/><line x1='2' y1='16' x2='32' y2='28'/></g><g stroke='%2344ccee' stroke-width='0.8' fill='none' opacity='0.9'><!-- 右VPからの放射線 --><line x1='30' y1='16' x2='0' y2='4'/><line x1='30' y1='16' x2='0' y2='10'/><line x1='30' y1='16' x2='0' y2='16'/><line x1='30' y1='16' x2='0' y2='22'/><line x1='30' y1='16' x2='0' y2='28'/></g><g stroke='%232233dd' stroke-width='1' fill='none' opacity='0.8'><!-- アイレベル --><line x1='0' y1='16' x2='32' y2='16' stroke-dasharray='3,2'/></g></svg>">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #1a1a1f; --panel: #24242c; --border: #35354a;
+  --accent: #7c6dfa; --accent2: #c084fc;
+  --text: #e8e8f0; --muted: #888899;
+}
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+header { padding: 10px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 12px; background: var(--panel); flex-shrink: 0; }
+header h1 { font-size: 14px; font-weight: 600; }
+.badge { font-size: 10px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; padding: 2px 8px; border-radius: 99px; font-weight: 700; }
+.main { display: flex; flex-direction: row; flex: 1; overflow: hidden; min-height: 0; }
+.sidebar { width: 240px; flex-shrink: 0; background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; display: flex; flex-direction: column; min-height: 0; }
+.sec { padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.sec-title { font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+.type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.tbtn { background: var(--bg); border: 1px solid var(--border); color: var(--muted); padding: 7px 4px; border-radius: 6px; font-size: 11px; cursor: pointer; text-align: center; line-height: 1.3; transition: all .15s; }
+.tbtn:hover { border-color: var(--accent); color: var(--text); }
+.tbtn.on { background: linear-gradient(135deg,#2d2660,#3a2060); border-color: var(--accent); color: var(--text); font-weight: 600; }
+.tbtn .ic { font-size: 15px; display: block; margin-bottom: 2px; }
+.lbl { font-size: 11px; color: var(--muted); margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+.lbl b { color: var(--text); font-weight: 600; }
+input[type=range] { width: 100%; -webkit-appearance: none; height: 4px; background: var(--border); border-radius: 2px; outline: none; margin-bottom: 10px; cursor: pointer; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--accent); }
+input[type=color] { width: 28px; height: 22px; border: 1px solid var(--border); border-radius: 3px; background: none; cursor: pointer; padding: 1px; }
+.btn { display: block; width: 100%; padding: 8px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; margin-bottom: 5px; }
+.btn-p { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; }
+.btn-s { background: var(--bg); color: var(--text); border: 1px solid var(--border); }
+.trow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.tog { width: 34px; height: 18px; background: var(--border); border-radius: 9px; position: relative; cursor: pointer; border: none; transition: background .2s; flex-shrink: 0; }
+.tog.on { background: var(--accent); }
+.tog::after { content:''; position: absolute; width: 12px; height: 12px; border-radius: 50%; background: #fff; top: 3px; left: 3px; transition: left .2s; }
+.tog.on::after { left: 19px; }
+.hint { font-size: 10px; color: var(--muted); line-height: 1.8; }
+.hint kbd { background: var(--border); border-radius: 3px; padding: 1px 5px; font-size: 9px; color: var(--text); }
+
+/* VP card */
+.vpc { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 6px; overflow: hidden; }
+.vpc-h { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.vdot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.vpc-t { font-size: 11px; font-weight: 700; flex: 1; }
+.vpc-coord { font-size: 10px; color: var(--muted); font-family: monospace; }
+.vpc-d { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 0 2px; }
+.vpc-d:hover { color: #f87171; }
+.vpc-body { padding: 8px; }
+.vpc-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
+.vpc-row b { color: var(--text); font-weight: 600; min-width: 24px; }
+.vpc-row input[type=range] { flex: 1; margin-bottom: 0; }
+.vpc-row input[type=color] { flex-shrink: 0; }
+
+/* canvas */
+.carea { flex: 1; min-width: 0; background: #111118; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+#dropZone { width: 580px; height: 400px; border: 2px dashed var(--border); border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); gap: 10px; transition: border-color .2s; user-select: none; }
+#dropZone.over, #dropZone:hover { border-color: var(--accent); color: var(--text); }
+#dropZone .ic2 { font-size: 48px; opacity: .35; }
+#canvasWrap { display: none; position: relative; }
+#cv { display: block; }
+#lupe { display: none; position: absolute; border-radius: 50%; border: 2px solid #5566ff; overflow: hidden; pointer-events: none; box-shadow: 0 4px 20px rgba(0,0,0,.7); background: #000; }
+.sbar { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(16,16,22,.9); border: 1px solid var(--border); border-radius: 20px; padding: 5px 14px; font-size: 11px; color: var(--muted); pointer-events: none; white-space: nowrap; }
+.pair-btn { background: var(--bg); border: 1px solid var(--border); color: var(--muted); padding: 3px 7px; border-radius: 4px; font-size: 10px; cursor: pointer; }
+.pair-btn.on { background: #1a2a60; border-color: #4455cc; color: var(--text); font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <h1>パース分割線ジェネレーター</h1>
+</header>
+<div class="main">
+  <div class="sidebar">
+    <div class="sec">
+      <div class="sec-title">透視タイプ</div>
+      <div class="type-grid" id="typeGrid">
+        <button class="tbtn on" data-t="1p"><span class="ic">1️⃣</span>1点透視</button>
+        <button class="tbtn"   data-t="2p"><span class="ic">2️⃣</span>2点透視</button>
+        <button class="tbtn"   data-t="3p"><span class="ic">3️⃣</span>3点透視</button>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="sec-title">操作</div>
+      <div class="hint">
+        空きをクリック → 消失点を追加<br>
+        <kbd>●</kbd> ドラッグ → 支点を移動（拡大鏡表示）<br>
+        <kbd>線上</kbd> ドラッグ → 支点中心に回転<br>
+        <kbd>Ctrl+V</kbd> → 画像ペースト
+      </div>
+    </div>
+    <div class="sec">
+      <div class="sec-title">消失点</div>
+      <div id="vpList"><div class="hint">キャンバスをクリックして追加</div></div>
+    </div>
+    <div class="sec">
+      <div class="sec-title">共通設定</div>
+      <div class="lbl">透明度 <b id="ov">65</b>%</div>
+      <input type="range" id="os" min="10" max="100" value="65">
+      <div class="lbl">太さ <b id="wv">1.0</b>px</div>
+      <input type="range" id="ws" min="1" max="30" value="10">
+      <div class="trow" style="margin-bottom:4px">
+        <span class="lbl" style="margin:0">アイレベル</span>
+        <button class="tog on" id="hlTog"></button>
+      </div>
+      <div id="hlPairUI" style="display:none;margin-top:4px">
+        <div class="lbl" style="margin-bottom:4px">基準にするVPペア</div>
+        <div id="hlPairBtns" style="display:flex;gap:4px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+    <div class="sec" id="gridSec" style="display:none">
+      <div class="sec-title">軸グリッド</div>
+      <!-- 1点透視グリッド -->
+      <div id="grid1p" style="display:none">
+        <div class="trow" style="margin-bottom:6px">
+          <span class="lbl" style="margin:0">縦軸グリッド</span>
+          <button class="tog" id="tog1pV" onclick="S.grid.show1pV=!S.grid.show1pV;this.classList.toggle('on',S.grid.show1pV);draw()"></button>
+        </div>
+        <div class="lbl">縦軸の角度 <b id="ang1pV">90</b>°</div>
+        <input type="range" id="sl1pV" min="45" max="135" value="90"
+          oninput="S.grid.angle1p=+this.value;document.getElementById('ang1pV').textContent=this.value;draw()">
+        <div class="lbl">縦軸 間隔 <b id="sp1pV">60</b>px</div>
+        <input type="range" id="sp1pVs" min="5" max="300" value="60"
+          oninput="S.grid.spacing1pV=+this.value;document.getElementById('sp1pV').textContent=this.value;draw()">
+        <div class="trow" style="margin-bottom:6px;margin-top:4px">
+          <span class="lbl" style="margin:0">横軸グリッド（縦軸と直角）</span>
+          <button class="tog" id="tog1pH" onclick="S.grid.show1pH=!S.grid.show1pH;this.classList.toggle('on',S.grid.show1pH);draw()"></button>
+        </div>
+        <div class="lbl">横軸 間隔 <b id="sp1pH">60</b>px</div>
+        <input type="range" id="sp1pHs" min="5" max="300" value="60"
+          oninput="S.grid.spacing1pH=+this.value;document.getElementById('sp1pH').textContent=this.value;draw()">
+      </div>
+      <!-- 2点透視グリッド -->
+      <div id="grid2p" style="display:none">
+        <div class="trow" style="margin-bottom:6px">
+          <span class="lbl" style="margin:0">縦軸グリッド（アイレベルに直角）</span>
+          <button class="tog" id="tog2pV" onclick="S.grid.show2pV=!S.grid.show2pV;this.classList.toggle('on',S.grid.show2pV);draw()"></button>
+        </div>
+        <div class="lbl">間隔 <b id="sp2pV">60</b>px</div>
+        <input type="range" id="sp2pVs" min="5" max="300" value="60"
+          oninput="S.grid.spacing2pV=+this.value;document.getElementById('sp2pV').textContent=this.value;draw()">
+      </div>
+      <!-- 共通グリッドスタイル -->
+      <div class="crow" style="margin-top:8px">
+        <input type="color" id="gridColor" value="#888888" oninput="S.grid.color=this.value;draw()">
+        <span style="font-size:11px;color:var(--muted)">グリッド色</span>
+      </div>
+      <div class="lbl">グリッド透明度 <b id="gridOpV">40</b>%</div>
+      <input type="range" id="gridOpS" min="5" max="100" value="40"
+        oninput="S.grid.opacity=+this.value;document.getElementById('gridOpV').textContent=this.value;draw()">
+    </div>
+    <div class="sec">
+      <div class="sec-title">書き出し</div>
+      <div class="trow" style="margin-bottom:8px">
+        <span class="lbl" style="margin:0">背景と合成</span>
+        <button class="tog" id="mgTog"></button>
+      </div>
+      <button class="btn btn-p" id="expBtn">PNG書き出し</button>
+      <button class="btn btn-s" id="loadBtn">画像を読み込む</button>
+      <input type="file" id="fileIn" accept="image/*" style="display:none">
+    </div>
+    <div class="sec">
+      <div class="sec-title">作業ファイル</div>
+      <button class="btn btn-s" id="saveBtn">作業ファイルを保存 (.json)</button>
+      <button class="btn btn-s" id="loadProjBtn">作業ファイルを読み込む</button>
+      <input type="file" id="projIn" accept=".json" style="display:none">
+      <div class="hint" style="margin-top:4px">※ 保存時と異なる画像サイズで読み込んだ場合、支点座標はキャンバスサイズの比率で自動変換されます。同じ画像であれば完全に元通りになります。</div>
+    </div>
+  </div>
+
+  <div class="carea" id="carea">
+    <div id="dropZone">
+      <div class="ic2">🎨</div>
+      <div style="font-size:14px">画像をドロップ / クリックして読み込む</div>
+      <div style="font-size:11px;opacity:.6">PNG・JPG・WEBP　または Ctrl+V でペースト</div>
+    </div>
+    <div id="canvasWrap">
+      <canvas id="cv"></canvas>
+      <canvas id="lupe"></canvas>
+    </div>
+    <div class="sbar" id="sbar">画像を読み込んでください</div>
+  </div>
+</div>
+
+<script>
+// ======== CONFIG ========
+// VP固有の色（分割線色）: 赤・水色・緑
+const VP_RAY_COLOR = ['#ff5555', '#44ccee', '#44dd88'];
+// ハンドル補助線の色（VP番号×線AB）
+const LN_C = [
+  ['#ff8888','#cc3333'],
+  ['#55ddff','#0099bb'],
+  ['#66ee99','#119944'],
+];
+const VP_DOT_COLOR = ['#ff6b6b','#44ccee','#55dd88'];
+const VPMAX = {'1p':1,'2p':2,'3p':3};
+const HL_COLOR = '#2233dd'; // ウルトラマリン
+
+const PR = 13;   // pivot hit radius
+const LH = 9;    // line hit distance
+const LUPE_SIZE  = 160; // 拡大鏡サイズ(px)
+const LUPE_ZOOM  = 3;   // 拡大倍率
+const LUPE_MARGIN = 20; // キャンバス端からのマージン
+
+// ======== STATE ========
+const S = {
+  type:'1p', vps:[],
+  len:100, hl:true, hlPair:[0,1],
+  opacity:65, lw:1.0, merge:false,
+  img:null, imgW:0, imgH:0,
+  // 軸グリッド（1点透視：縦横、2点透視：縦のみ）
+  grid:{
+    show1pV:false, spacing1pV:60, // 1点 縦軸グリッド
+    show1pH:false, spacing1pH:60, // 1点 横軸グリッド
+    angle1p:90,                   // 縦軸の角度（度）、横軸は+90で連動
+    show2pV:false, spacing2pV:60, // 2点 縦軸グリッド
+    color:'#888888', opacity:40,  // グリッド色・透明度
+  }
+};
+// vp = {
+//   lines: [{px,py,angle}, {px,py,angle}],
+//   rayColor, lc:[colorA,colorB], dotColor,
+//   lines_n: 16,   ← VP固有の分割線本数
+// }
+
+let cv, ctx, lupe, lupeCtx, drag=null;
+
+// hex色+透明度→rgba文字列
+function rgba(hex,a){
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return 'rgba('+r+','+g+','+b+','+(a/100)+')';
+}
+
+// 湾曲両矢印カーソル（SVGをdata URIで定義）
+const rotateCursorSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <path d="M12 4 C7 4 3.5 7.5 3.5 12 C3.5 14.5 4.5 16.7 6.2 18.2" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M12 4 C7 4 3.5 7.5 3.5 12 C3.5 14.5 4.5 16.7 6.2 18.2" stroke="#333" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M12 4 C17 4 20.5 7.5 20.5 12 C20.5 14.5 19.5 16.7 17.8 18.2" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round"/>
+  <path d="M12 4 C17 4 20.5 7.5 20.5 12 C20.5 14.5 19.5 16.7 17.8 18.2" stroke="#333" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <polygon points="4,16 7.5,19.5 7.5,15.5" fill="white" stroke="white" stroke-width="1"/>
+  <polygon points="4,16 7.5,19.5 7.5,15.5" fill="#333"/>
+  <polygon points="20,16 16.5,19.5 16.5,15.5" fill="white" stroke="white" stroke-width="1"/>
+  <polygon points="20,16 16.5,19.5 16.5,15.5" fill="#333"/>
+</svg>`;
+const rotateCursor = `url("data:image/svg+xml,${encodeURIComponent(rotateCursorSVG)}") 12 12, ew-resize`;
+
+// ======== INIT ========
+window.addEventListener('load', () => {
+  document.getElementById('typeGrid').querySelectorAll('.tbtn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tbtn').forEach(b=>b.classList.remove('on'));
+      btn.classList.add('on');
+      S.type = btn.dataset.t;
+      S.vps = [];
+      document.getElementById('gridSec').style.display = (S.type==='1p'||S.type==='2p') ? 'block' : 'none';
+      document.getElementById('grid1p').style.display  = S.type==='1p' ? 'block' : 'none';
+      document.getElementById('grid2p').style.display  = S.type==='2p' ? 'block' : 'none';
+      renderVPList(); updateHlPairUI(); draw();
+    });
+  });
+
+  const bind = (sid, vid, fn) => {
+    const sl = document.getElementById(sid);
+    sl.addEventListener('input', () => { document.getElementById(vid).textContent = fn(sl.value); draw(); });
+  };
+  bind('os', 'ov',  v => { S.opacity = +v; return v; });
+  bind('ws', 'wv',  v => { S.lw = v/10;   return (+v/10).toFixed(1); });
+
+  document.getElementById('hlTog').addEventListener('click', function(){ S.hl=!S.hl; this.classList.toggle('on',S.hl); draw(); });
+  document.getElementById('mgTog').addEventListener('click', function(){ S.merge=!S.merge; this.classList.toggle('on',S.merge); });
+  document.getElementById('loadBtn').addEventListener('click', ()=>document.getElementById('fileIn').click());
+  document.getElementById('fileIn').addEventListener('change', e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
+  document.getElementById('expBtn').addEventListener('click', doExport);
+  document.getElementById('saveBtn').addEventListener('click', saveProject);
+  document.getElementById('loadProjBtn').addEventListener('click', ()=>document.getElementById('projIn').click());
+  document.getElementById('projIn').addEventListener('change', e=>{ if(e.target.files[0]) loadProject(e.target.files[0]); e.target.value=''; });
+  document.getElementById('projIn').addEventListener('change', e=>{ if(e.target.files[0]) loadProject(e.target.files[0]); e.target.value=''; });
+  document.getElementById('dropZone').addEventListener('click', ()=>document.getElementById('fileIn').click());
+
+  document.addEventListener('dragover', e=>e.preventDefault());
+  document.addEventListener('drop', e=>{
+    e.preventDefault();
+    const f=e.dataTransfer.files[0];
+    if(f&&f.type.startsWith('image/')) loadFile(f);
+  });
+  document.getElementById('dropZone').addEventListener('dragenter', ()=>document.getElementById('dropZone').classList.add('over'));
+  document.getElementById('dropZone').addEventListener('dragleave', ()=>document.getElementById('dropZone').classList.remove('over'));
+
+  document.addEventListener('paste', e=>{
+    if(!e.clipboardData) return;
+    for(const item of e.clipboardData.items){
+      if(item.type.startsWith('image/')){ loadFile(item.getAsFile()); break; }
+    }
+  });
+});
+
+// ======== FILE LOAD ========
+function loadFile(file){
+  const r=new FileReader();
+  r.onload=ev=>{ const img=new Image(); img.onload=()=>setupCanvas(img); img.src=ev.target.result; };
+  r.readAsDataURL(file);
+}
+function setupCanvas(img){
+  cv=document.getElementById('cv'); ctx=cv.getContext('2d');
+  lupe=document.getElementById('lupe'); lupeCtx=lupe.getContext('2d');
+
+  const area=document.getElementById('carea');
+  const sc=Math.min((area.clientWidth-40)/img.width,(area.clientHeight-40)/img.height,1);
+  S.img=img; S.imgW=img.width; S.imgH=img.height;
+  cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
+
+  lupe.width=LUPE_SIZE; lupe.height=LUPE_SIZE;
+  lupe.style.width=LUPE_SIZE+'px'; lupe.style.height=LUPE_SIZE+'px';
+
+  document.getElementById('dropZone').style.display='none';
+  document.getElementById('canvasWrap').style.display='block';
+  document.getElementById('sbar').textContent=img.width+' × '+img.height+' px';
+
+  S.vps=[]; renderVPList(); updateHlPairUI();
+  draw();
+  cv.onmousedown=onDown;
+  window.onmousemove=onMove;
+  window.onmouseup=onUp;
+}
+
+// ======== VP CARDS ========
+function renderVPList(){
+  const el=document.getElementById('vpList');
+  if(!S.vps.length){ el.innerHTML='<div class="hint">キャンバスをクリックして追加</div>'; return; }
+  el.innerHTML=S.vps.map((vp,vi)=>{
+    const pt=intersect(vp.lines[0],vp.lines[1]);
+    const coord=pt?'('+Math.round(pt.x)+','+Math.round(pt.y)+')':'平行';
+    return `<div class="vpc">
+      <div class="vpc-h">
+        <div class="vdot" style="background:${vp.dotColor}"></div>
+        <span class="vpc-t">VP${vi+1}</span>
+        <span class="vpc-coord">${coord}</span>
+        <button class="vpc-d" onclick="removeVP(${vi})">×</button>
+      </div>
+      <div class="vpc-body">
+        <div class="vpc-row">
+          <span>分割線</span>
+          <input type="range" min="4" max="72" value="${vp.lines_n}"
+            oninput="S.vps[${vi}].lines_n=+this.value;this.nextElementSibling.textContent=this.value;draw()">
+          <b>${vp.lines_n}</b>
+        </div>
+        <div class="vpc-row">
+          <span>色</span>
+          <input type="color" value="${vp.rayColor}"
+            oninput="S.vps[${vi}].rayColor=this.value;draw()">
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function addVP(cx,cy){
+  if(S.vps.length>=VPMAX[S.type]){ setSbar('消失点の上限に達しました'); return; }
+  const ci=S.vps.length;
+  const ox=80, oy=60;
+  S.vps.push({
+    lines:[
+      {px:cx-ox, py:cy+oy, angle:Math.atan2(cy-(cy+oy), cx-(cx-ox))},
+      {px:cx+ox, py:cy+oy, angle:Math.atan2(cy-(cy+oy), cx-(cx+ox))},
+    ],
+    rayColor: VP_RAY_COLOR[ci % VP_RAY_COLOR.length],
+    lc:       LN_C[ci % LN_C.length],
+    dotColor: VP_DOT_COLOR[ci % VP_DOT_COLOR.length],
+    lines_n:  16,
+  });
+  renderVPList(); updateHlPairUI(); draw();
+  setSbar('支点をドラッグ→移動（拡大表示）　線上をドラッグ→回転');
+}
+function removeVP(vi){ S.vps.splice(vi,1); renderVPList(); updateHlPairUI(); draw(); }
+
+// ======== HIT TEST ========
+function cvXY(e){ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+
+// VP交点マーカーのヒットテスト
+function hitVP(x,y){
+  for(let vi=0;vi<S.vps.length;vi++){
+    const pt=intersect(S.vps[vi].lines[0],S.vps[vi].lines[1]);
+    if(!pt) continue;
+    // 画面内VPのみドラッグ可能（画面外は矢印表示なのでヒット不可）
+    if(pt.x<-50||pt.x>cv.width+50||pt.y<-50||pt.y>cv.height+50) continue;
+    if(Math.hypot(x-pt.x,y-pt.y)<=16) return {vi, mode:'vp', pt};
+  }
+  return null;
+}
+
+function hitPivot(x,y){
+  for(let vi=0;vi<S.vps.length;vi++)
+    for(let li=0;li<2;li++)
+      if(Math.hypot(x-S.vps[vi].lines[li].px,y-S.vps[vi].lines[li].py)<=PR)
+        return {vi,li,mode:'pivot'};
+  return null;
+}
+function hitLine(x,y){
+  for(let vi=0;vi<S.vps.length;vi++)
+    for(let li=0;li<2;li++){
+      const ln=S.vps[vi].lines[li];
+      const dx=Math.cos(ln.angle),dy=Math.sin(ln.angle);
+      const ex=x-ln.px,ey=y-ln.py;
+      if(Math.abs(ex*dy-ey*dx)<=LH && Math.abs(ex*dx+ey*dy)>PR)
+        return {vi,li,mode:'rotate'};
+    }
+  return null;
+}
+
+// ======== MOUSE ========
+function onDown(e){
+  const {x,y}=cvXY(e);
+
+  // VP交点マーカーを優先ヒット
+  let h=hitVP(x,y);
+  if(h){
+    drag={...h, ox:x-h.pt.x, oy:y-h.pt.y};
+    cv.style.cursor='none';
+    e.preventDefault();
+    return;
+  }
+
+  h=hitPivot(x,y)||hitLine(x,y);
+  if(h){
+    drag={...h};
+    if(h.mode==='pivot'){
+      const ln=S.vps[h.vi].lines[h.li];
+      drag.ox=x-ln.px; drag.oy=y-ln.py;
+    }
+    cv.style.cursor='none';
+    e.preventDefault();
+    return;
+  }
+  addVP(x,y);
+}
+
+function onMove(e){
+  if(!drag){
+    if(e.target!==cv) return;
+    const {x,y}=cvXY(e);
+    if(hitVP(x,y))          cv.style.cursor='move';
+    else if(hitPivot(x,y))  cv.style.cursor='grab';
+    else if(hitLine(x,y))   cv.style.cursor=rotateCursor;
+    else                    cv.style.cursor='crosshair';
+    hideLupe();
+    return;
+  }
+  const {x,y}=cvXY(e);
+
+  if(drag.mode==='vp'){
+    // VP交点を新しい位置へ移動：各線の支点は固定、角度だけ追従
+    const newVPx=x-drag.ox, newVPy=y-drag.oy;
+    const vp=S.vps[drag.vi];
+    vp.lines.forEach(ln=>{
+      ln.angle=Math.atan2(newVPy-ln.py, newVPx-ln.px);
+    });
+    showLupe(newVPx, newVPy);
+    draw(); renderVPList();
+    return;
+  }
+
+  const ln=S.vps[drag.vi].lines[drag.li];
+  if(drag.mode==='pivot'){
+    ln.px=x-drag.ox; ln.py=y-drag.oy;
+    showLupe(ln.px, ln.py);
+  } else {
+    ln.angle=Math.atan2(y-ln.py, x-ln.px);
+    hideLupe();
+  }
+  draw(); renderVPList();
+}
+function onUp(){
+  drag=null;
+  cv.style.cursor='crosshair';
+  hideLupe();
+}
+
+// ======== LUPE (拡大鏡) ========
+function showLupe(px, py){
+  // 拡大鏡の位置：支点位置と被らない場所（右下 or 右上）
+  const wrap=document.getElementById('canvasWrap');
+  const W=cv.width, H=cv.height;
+  const LS=LUPE_SIZE, Z=LUPE_ZOOM;
+  const margin=LUPE_MARGIN+LS+10;
+
+  // 支点がキャンバス左半分なら右、右半分なら左
+  let lx = px < W/2 ? W - LS - LUPE_MARGIN : LUPE_MARGIN;
+  let ly = py < H/2 ? H - LS - LUPE_MARGIN : LUPE_MARGIN;
+
+  lupe.style.left=lx+'px'; lupe.style.top=ly+'px';
+  lupe.style.display='block';
+  lupe.style.borderRadius='50%';
+
+  // 拡大描画
+  lupeCtx.clearRect(0,0,LS,LS);
+
+  // クリップ（円形）
+  lupeCtx.save();
+  lupeCtx.beginPath();
+  lupeCtx.arc(LS/2,LS/2,LS/2,0,Math.PI*2);
+  lupeCtx.clip();
+
+  // 背景画像
+  if(S.img){
+    const sx=px - LS/(Z*2), sy=py - LS/(Z*2);
+    const sw=LS/Z, sh=LS/Z;
+    lupeCtx.drawImage(cv, sx,sy,sw,sh, 0,0,LS,LS);
+  }
+
+  // 支点の場所に十字マーカー（拡大鏡中央）
+  lupeCtx.strokeStyle='rgba(255,80,80,0.9)';
+  lupeCtx.lineWidth=1.5;
+  lupeCtx.beginPath();
+  lupeCtx.moveTo(LS/2-10,LS/2); lupeCtx.lineTo(LS/2+10,LS/2);
+  lupeCtx.moveTo(LS/2,LS/2-10); lupeCtx.lineTo(LS/2,LS/2+10);
+  lupeCtx.stroke();
+
+  lupeCtx.restore();
+
+  // 外枠ラベル
+  lupeCtx.strokeStyle='#5566ff';
+  lupeCtx.lineWidth=2;
+  lupeCtx.beginPath();
+  lupeCtx.arc(LS/2,LS/2,LS/2-1,0,Math.PI*2);
+  lupeCtx.stroke();
+}
+function hideLupe(){
+  if(lupe) lupe.style.display='none';
+}
+
+// ======== GEOMETRY ========
+function intersect(la,lb){
+  const dax=Math.cos(la.angle),day=Math.sin(la.angle);
+  const dbx=Math.cos(lb.angle),dby=Math.sin(lb.angle);
+  const cross=dax*dby-day*dbx;
+  if(Math.abs(cross)<1e-9) return null;
+  const t=((lb.px-la.px)*dby-(lb.py-la.py)*dbx)/cross;
+  return {x:la.px+dax*t, y:la.py+day*t};
+}
+
+
+// ======== DRAW ========
+function draw(){
+  if(!cv) return;
+  const W=cv.width, H=cv.height;
+  ctx.clearRect(0,0,W,H);
+  if(S.img) ctx.drawImage(S.img,0,0,W,H);
+
+  if(S.hl && S.vps.length>0) drawHorizonLine();
+
+  S.vps.forEach((vp,vi)=>{
+    const pt=intersect(vp.lines[0],vp.lines[1]);
+    if(pt) drawRays(pt,vp.rayColor,vp.lines_n,W,H);
+    vp.lines.forEach((ln,li)=>drawHandle(ln,vp.lc[li],W,H));
+    if(pt) drawVPMark(pt,vi,vp.dotColor,W,H);
+  });
+
+  if(S.type==='1p') drawGrid1p(W,H);
+  if(S.type==='2p') drawGrid2p(W,H);
+
+  if(drag && drag.mode==='pivot' && lupe && lupe.style.display!=='none'){
+    const ln=S.vps[drag.vi].lines[drag.li];
+    showLupe(ln.px,ln.py);
+  }
+}
+
+function drawParallelLines(ux,uy,origin,spacing,W,H,c){
+  // ux,uyは単位方向ベクトル（線の方向）
+  // 垂直方向: nx,ny
+  const nx=-uy, ny=ux;
+  const col=rgba(S.grid.color, S.grid.opacity);
+  c=c||ctx;
+  c.save();
+  c.strokeStyle=col;
+  c.lineWidth=S.lw*0.7;
+  c.setLineDash([]);
+
+  // originからnx,ny方向にspacing刻みで線を引く
+  // キャンバス対角線の長さ分だけカバー
+  const diag=Math.hypot(W,H);
+  const steps=Math.ceil(diag/spacing)+2;
+
+  for(let k=-steps;k<=steps;k++){
+    // k番目の線の基準点
+    const bx=origin.x+nx*spacing*k;
+    const by=origin.y+ny*spacing*k;
+    // この点を通りux,uy方向の直線をキャンバス端まで延長
+    const big=diag*2;
+    c.beginPath();
+    c.moveTo(bx-ux*big, by-uy*big);
+    c.lineTo(bx+ux*big, by+uy*big);
+    c.stroke();
+  }
+  c.restore();
+}
+
+function drawGrid1p(W,H){
+  const g=S.grid;
+  if(!g.show1pV && !g.show1pH) return;
+  // VP1の消失点を原点にする
+  const pt = S.vps.length>0 ? intersect(S.vps[0].lines[0],S.vps[0].lines[1]) : {x:W/2,y:H/2};
+  const origin = pt || {x:W/2,y:H/2};
+
+  // 縦軸の方向ベクトル（angle1p度）
+  const angRad=(g.angle1p-90)*Math.PI/180; // 90度=垂直が基準
+  const vx=Math.sin(angRad), vy=-Math.cos(angRad); // 縦軸方向
+  const hx=Math.cos(angRad), hy=Math.sin(angRad);  // 横軸方向（縦軸+90度）
+
+  if(g.show1pV) drawParallelLines(vx,vy,origin,g.spacing1pV,W,H,ctx);
+  if(g.show1pH) drawParallelLines(hx,hy,origin,g.spacing1pH,W,H,ctx);
+}
+
+function drawGrid2p(W,H){
+  const g=S.grid;
+  if(!g.show2pV) return;
+  if(S.vps.length<2) return;
+
+  // アイレベル（VP1-VP2を結ぶ線）の方向を求める
+  const pts=S.vps.map(vp=>intersect(vp.lines[0],vp.lines[1]));
+  const [ai,bi]=S.hlPair;
+  const pa=pts[ai], pb=pts[bi];
+  if(!pa||!pb) return;
+
+  // アイレベルの方向ベクトル
+  const dx=pb.x-pa.x, dy=pb.y-pa.y;
+  const d=Math.hypot(dx,dy);
+  if(d<0.01) return;
+  const hlUx=dx/d, hlUy=dy/d;
+  // アイレベルに直角な縦軸方向
+  const vx=-hlUy, vy=hlUx;
+
+  // 基準点はアイレベル上の中点（画面中心に近い側）
+  const origin={x:(pa.x+pb.x)/2, y:(pa.y+pb.y)/2};
+  drawParallelLines(vx,vy,origin,g.spacing2pV,W,H,ctx);
+}
+
+function drawGrid1pExport(W,H,c,sc){
+  const g=S.grid;
+  if(!g.show1pV && !g.show1pH) return;
+  const pt=S.vps.length>0?intersect(S.vps[0].lines[0],S.vps[0].lines[1]):null;
+  const origin=pt?{x:pt.x,y:pt.y}:{x:W/2,y:H/2};
+  const angRad=(g.angle1p-90)*Math.PI/180;
+  const vx=Math.sin(angRad),vy=-Math.cos(angRad);
+  const hx=Math.cos(angRad),hy=Math.sin(angRad);
+  if(g.show1pV) drawParallelLines(vx,vy,origin,g.spacing1pV,W,H,c);
+  if(g.show1pH) drawParallelLines(hx,hy,origin,g.spacing1pH,W,H,c);
+}
+
+function drawGrid2pExport(W,H,c){
+  const g=S.grid;
+  if(!g.show2pV||S.vps.length<2) return;
+  const pts=S.vps.map(vp=>intersect(vp.lines[0],vp.lines[1]));
+  const [ai,bi]=S.hlPair;
+  const pa=pts[ai],pb=pts[bi];
+  if(!pa||!pb) return;
+  const dx=pb.x-pa.x,dy=pb.y-pa.y,d=Math.hypot(dx,dy);
+  if(d<0.01) return;
+  const vx=-dy/d,vy=dx/d;
+  const origin={x:(pa.x+pb.x)/2,y:(pa.y+pb.y)/2};
+  drawParallelLines(vx,vy,origin,g.spacing2pV,W,H,c);
+}
+
+
+function drawHorizonLine(){
+  const W=cv.width, H=cv.height;
+  const pts=S.vps.map(vp=>intersect(vp.lines[0],vp.lines[1]));
+
+  if(S.vps.length===1){
+    // VP1つ: そのVPのY座標で水平線
+    const pt=pts[0];
+    if(!pt) return;
+    ctx.save();
+    ctx.strokeStyle=rgba(HL_COLOR,80); ctx.lineWidth=1.5; ctx.setLineDash([10,4]);
+    ctx.beginPath(); ctx.moveTo(0,pt.y); ctx.lineTo(W,pt.y); ctx.stroke();
+    ctx.setLineDash([]); ctx.restore();
+    return;
+  }
+
+  // VP2つ以上: hlPairで指定した2点を通る直線を描画
+  const [ai,bi]=S.hlPair;
+  const pa=pts[ai], pb=pts[bi];
+  if(!pa||!pb) return;
+
+  // 2点を通る直線をキャンバス端まで延長
+  ctx.save();
+  ctx.strokeStyle=rgba(HL_COLOR,80); ctx.lineWidth=1.5; ctx.setLineDash([10,4]);
+  ctx.beginPath();
+  // 直線の式: pa→pb方向で端点を計算
+  if(Math.abs(pb.x-pa.x)<0.01){
+    // ほぼ垂直
+    ctx.moveTo(pa.x,0); ctx.lineTo(pa.x,H);
+  } else {
+    const slope=(pb.y-pa.y)/(pb.x-pa.x);
+    const y0=pa.y+slope*(0-pa.x);
+    const y1=pa.y+slope*(W-pa.x);
+    ctx.moveTo(0,y0); ctx.lineTo(W,y1);
+  }
+  ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+}
+
+// アイレベル用ペアUIを更新
+function updateHlPairUI(){
+  const n=S.vps.length;
+  const ui=document.getElementById('hlPairUI');
+  const btns=document.getElementById('hlPairBtns');
+
+  if(!S.hl||n<2){ ui.style.display='none'; return; }
+  ui.style.display='block';
+
+  // 全ペアの組み合わせを列挙
+  const pairs=[];
+  for(let i=0;i<n;i++) for(let j=i+1;j<n;j++) pairs.push([i,j]);
+
+  // hlPairが有効かチェック、なければ最初のペアに
+  const valid=pairs.some(p=>p[0]===S.hlPair[0]&&p[1]===S.hlPair[1]);
+  if(!valid && pairs.length>0) S.hlPair=pairs[0];
+
+  btns.innerHTML=pairs.map(([a,b])=>{
+    const isOn=S.hlPair[0]===a&&S.hlPair[1]===b;
+    return `<button class="pair-btn${isOn?' on':''}"
+      onclick="S.hlPair=[${a},${b}];updateHlPairUI();draw()">
+      VP${a+1}–VP${b+1}
+    </button>`;
+  }).join('');
+}
+
+
+function drawRays(vp,color,n,W,H,targetCtx){
+  const c = targetCtx || ctx;
+  c.save();
+  c.strokeStyle=rgba(color,S.opacity);
+  c.lineWidth=S.lw; c.lineCap='round';
+  const big=Math.hypot(W,H)*3;
+  const len=big;
+  const inCanvas=vp.x>=-1&&vp.x<=W+1&&vp.y>=-1&&vp.y<=H+1;
+  const GAP = inCanvas ? Math.max(12, Math.min(40, Math.hypot(W,H)*0.018)) : 0;
+
+  if(inCanvas){
+    for(let i=0;i<n;i++){
+      const a=(Math.PI*2/n)*i;
+      const dx=Math.cos(a), dy=Math.sin(a);
+      c.beginPath();
+      c.moveTo(vp.x-dx*len, vp.y-dy*len);
+      c.lineTo(vp.x-dx*GAP, vp.y-dy*GAP);
+      c.stroke();
+      c.beginPath();
+      c.moveTo(vp.x+dx*GAP, vp.y+dy*GAP);
+      c.lineTo(vp.x+dx*len, vp.y+dy*len);
+      c.stroke();
+    }
+    const cs=GAP*0.7;
+    c.lineWidth=Math.max(1,S.lw*1.5);
+    c.strokeStyle=rgba(color,Math.min(100,S.opacity+20));
+    c.beginPath();
+    c.moveTo(vp.x-cs,vp.y); c.lineTo(vp.x+cs,vp.y);
+    c.moveTo(vp.x,vp.y-cs); c.lineTo(vp.x,vp.y+cs);
+    c.stroke();
+  } else {
+    const edgeDefs=[
+      {mx:W/2,my:0,   nx:0, ny:-1,pt:t=>({x:t*W,       y:0}),   el:W},
+      {mx:W,  my:H/2, nx:1, ny:0, pt:t=>({x:W,          y:t*H}), el:H},
+      {mx:W/2,my:H,   nx:0, ny:1, pt:t=>({x:(1-t)*W,    y:H}),   el:W},
+      {mx:0,  my:H/2, nx:-1,ny:0, pt:t=>({x:0,          y:(1-t)*H}),el:H},
+    ];
+    let active=edgeDefs.filter(e=>(e.mx-vp.x)*e.nx+(e.my-vp.y)*e.ny<0);
+    if(!active.length) active=edgeDefs;
+    const totalL=active.reduce((s,e)=>s+e.el,0);
+    const step=totalL/n;
+    for(let i=0;i<n;i++){
+      let rem=step*(i+0.5), p=null;
+      for(const e of active){if(rem<=e.el){p=e.pt(rem/e.el);break;}rem-=e.el;}
+      if(!p) p=active[active.length-1].pt(1);
+      const dx=vp.x-p.x, dy=vp.y-p.y, d=Math.hypot(dx,dy);
+      if(d<0.01) continue;
+      const ux=dx/d, uy=dy/d;
+      c.beginPath();
+      c.moveTo(p.x-ux*len, p.y-uy*len);
+      c.lineTo(p.x+ux*len, p.y+uy*len);
+      c.stroke();
+    }
+  }
+  c.restore();
+}
+
+function drawHandle(ln,color,W,H){
+  const big=Math.hypot(W,H)*3,dx=Math.cos(ln.angle),dy=Math.sin(ln.angle);
+  ctx.save();
+  ctx.strokeStyle=color+'99'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+  ctx.beginPath();
+  ctx.moveTo(ln.px-dx*big,ln.py-dy*big);
+  ctx.lineTo(ln.px+dx*big,ln.py+dy*big);
+  ctx.stroke(); ctx.setLineDash([]);
+  // 支点: エッジのみ円 + 十字
+  const R=7;
+  ctx.strokeStyle=color; ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.arc(ln.px,ln.py,R,0,Math.PI*2); ctx.stroke();
+  ctx.strokeStyle='rgba(255,255,255,0.55)'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.arc(ln.px,ln.py,R+1.5,0,Math.PI*2); ctx.stroke();
+  ctx.strokeStyle=color; ctx.lineWidth=1.5;
+  ctx.beginPath();
+  ctx.moveTo(ln.px-4,ln.py); ctx.lineTo(ln.px+4,ln.py);
+  ctx.moveTo(ln.px,ln.py-4); ctx.lineTo(ln.px,ln.py+4);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawVPMark(pt,vi,color,W,H){
+  ctx.save();
+  const near=pt.x>-500&&pt.x<W+500&&pt.y>-500&&pt.y<H+500;
+  if(near){
+    ctx.fillStyle=color+'44'; ctx.strokeStyle=color; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(pt.x,pt.y,11,0,Math.PI*2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle='#fff'; ctx.font='bold 9px sans-serif';
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('VP'+(vi+1),pt.x,pt.y);
+  } else {
+    const ang=Math.atan2(pt.y-H/2,pt.x-W/2), m=40;
+    const cands=[
+      {x:W-m,y:H/2+Math.tan(ang)*(W/2-m)},
+      {x:m,  y:H/2-Math.tan(ang)*(W/2-m)},
+      {x:W/2+(H/2-m)/Math.tan(ang),y:H-m},
+      {x:W/2-(H/2-m)/Math.tan(ang),y:m},
+    ];
+    let ex=W/2,ey=H/2;
+    for(const c of cands) if(c.x>=m&&c.x<=W-m&&c.y>=m&&c.y<=H-m){ex=c.x;ey=c.y;break;}
+    const al=11,aw=7;
+    ctx.fillStyle=color;
+    ctx.beginPath();
+    ctx.moveTo(ex+Math.cos(ang)*al,ey+Math.sin(ang)*al);
+    ctx.lineTo(ex-Math.cos(ang)*al+Math.sin(ang)*aw,ey-Math.sin(ang)*al-Math.cos(ang)*aw);
+    ctx.lineTo(ex-Math.cos(ang)*al-Math.sin(ang)*aw,ey-Math.sin(ang)*al+Math.cos(ang)*aw);
+    ctx.closePath(); ctx.fill();
+    ctx.font='bold 10px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('VP'+(vi+1),ex-Math.cos(ang)*24,ey-Math.sin(ang)*24);
+  }
+  ctx.restore();
+}
+
+// ======== EXPORT ========
+function doExport(){
+  if(!S.img){alert('画像を読み込んでください');return;}
+  const W=S.imgW,H=S.imgH;
+  const oc=document.createElement('canvas'); oc.width=W; oc.height=H;
+  const oc2=oc.getContext('2d');
+  const sc2=W/cv.width;
+  if(S.merge) oc2.drawImage(S.img,0,0,W,H);
+  oc2.save(); oc2.scale(sc2,sc2);
+  if(S.hl && S.vps.length>0){
+    const pts=S.vps.map(vp=>intersect(vp.lines[0],vp.lines[1]));
+    let doLine=false, x0=0,y0=0,x1=cv.width,y1=0;
+    if(S.vps.length===1){
+      const pt=pts[0]; if(pt){ doLine=true; y0=pt.y; y1=pt.y; }
+    } else {
+      const [ai,bi]=S.hlPair; const pa=pts[ai],pb=pts[bi];
+      if(pa&&pb){
+        doLine=true;
+        if(Math.abs(pb.x-pa.x)<0.01){ x0=pa.x;x1=pa.x;y0=0;y1=cv.height; }
+        else{ const sl=(pb.y-pa.y)/(pb.x-pa.x); y0=pa.y+sl*(0-pa.x); y1=pa.y+sl*(cv.width-pa.x); }
+      }
+    }
+    if(doLine){
+      oc2.save();
+      oc2.strokeStyle=rgba(HL_COLOR,80); oc2.lineWidth=1.5; oc2.setLineDash([10,4]);
+      oc2.beginPath(); oc2.moveTo(x0,y0); oc2.lineTo(x1,y1); oc2.stroke();
+      oc2.setLineDash([]); oc2.restore();
+    }
+  }
+  S.vps.forEach(vp=>{
+    const pt=intersect(vp.lines[0],vp.lines[1]);
+    if(!pt) return;
+    const n=vp.lines_n, W2=cv.width, H2=cv.height;
+    const big=Math.hypot(W2,H2)*3, len=big;
+    oc2.save();
+    oc2.strokeStyle=rgba(vp.rayColor,S.opacity);
+    oc2.lineWidth=S.lw; oc2.lineCap='round';
+    const inC=pt.x>=-1&&pt.x<=W2+1&&pt.y>=-1&&pt.y<=H2+1;
+    const GAP=inC?Math.max(12,Math.min(40,Math.hypot(W2,H2)*0.018)):0;
+    if(inC){
+      for(let i=0;i<n;i++){
+        const a=(Math.PI*2/n)*i,dx=Math.cos(a),dy=Math.sin(a);
+        oc2.beginPath();oc2.moveTo(pt.x-dx*len,pt.y-dy*len);oc2.lineTo(pt.x-dx*GAP,pt.y-dy*GAP);oc2.stroke();
+        oc2.beginPath();oc2.moveTo(pt.x+dx*GAP,pt.y+dy*GAP);oc2.lineTo(pt.x+dx*len,pt.y+dy*len);oc2.stroke();
+      }
+      const cs=GAP*0.7;
+      oc2.lineWidth=Math.max(1,S.lw*1.5);oc2.strokeStyle=rgba(vp.rayColor,Math.min(100,S.opacity+20));
+      oc2.beginPath();oc2.moveTo(pt.x-cs,pt.y);oc2.lineTo(pt.x+cs,pt.y);oc2.moveTo(pt.x,pt.y-cs);oc2.lineTo(pt.x,pt.y+cs);oc2.stroke();
+    } else {
+      const edgeDefs=[
+        {mx:W2/2,my:0,   nx:0, ny:-1,pt:t=>({x:t*W2,     y:0}),   el:W2},
+        {mx:W2,  my:H2/2,nx:1, ny:0, pt:t=>({x:W2,        y:t*H2}),el:H2},
+        {mx:W2/2,my:H2,  nx:0, ny:1, pt:t=>({x:(1-t)*W2,  y:H2}),  el:W2},
+        {mx:0,   my:H2/2,nx:-1,ny:0, pt:t=>({x:0,         y:(1-t)*H2}),el:H2},
+      ];
+      let active=edgeDefs.filter(e=>(e.mx-pt.x)*e.nx+(e.my-pt.y)*e.ny<0);
+      if(!active.length) active=edgeDefs;
+      const totalL=active.reduce((s,e)=>s+e.el,0);
+      const step=totalL/n;
+      for(let i=0;i<n;i++){
+        let rem=step*(i+0.5),p=null;
+        for(const e of active){if(rem<=e.el){p=e.pt(rem/e.el);break;}rem-=e.el;}
+        if(!p) p=active[active.length-1].pt(1);
+        const dx=pt.x-p.x,dy=pt.y-p.y,d=Math.hypot(dx,dy);
+        if(d<0.01)continue;
+        const ux=dx/d,uy=dy/d;
+        oc2.beginPath();oc2.moveTo(p.x-ux*len,p.y-uy*len);oc2.lineTo(p.x+ux*len,p.y+uy*len);oc2.stroke();
+      }
+    }
+    oc2.restore();
+  });
+  // 軸グリッドをExport
+  if(S.type==='1p') drawGrid1pExport(cv.width,cv.height,oc2);
+  if(S.type==='2p') drawGrid2pExport(cv.width,cv.height,oc2);
+  oc2.restore();
+  oc.toBlob(blob=>{
+    const url=URL.createObjectURL(blob),a=document.createElement('a');
+    a.href=url; a.download='perspective_grid_'+S.type+'.png'; a.click();
+    URL.revokeObjectURL(url);
+  },'image/png');
+}
+
+// ======== PROJECT SAVE / LOAD ========
+function saveProject(){
+  const data={
+    version: 1,
+    type:    S.type,
+    vps:     S.vps.map(vp=>({
+      lines:    vp.lines.map(l=>({px:l.px, py:l.py, angle:l.angle})),
+      rayColor: vp.rayColor,
+      lc:       vp.lc,
+      dotColor: vp.dotColor,
+      lines_n:  vp.lines_n,
+    })),
+    hl:      S.hl,
+    hlPair:  S.hlPair,
+    opacity: S.opacity,
+    lw:      S.lw,
+    merge:   S.merge,
+    grid:    {...S.grid},
+    // キャンバスサイズ（読み込み時の座標スケール計算用）
+    canvasW: cv ? cv.width  : 0,
+    canvasH: cv ? cv.height : 0,
+    imgW:    S.imgW,
+    imgH:    S.imgH,
+  };
+  const json=JSON.stringify(data, null, 2);
+  const blob=new Blob([json],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url; a.download='perspective_project.json'; a.click();
+  URL.revokeObjectURL(url);
+  setSbar('作業ファイルを保存しました');
+}
+
+function loadProject(file){
+  const reader=new FileReader();
+  reader.onload=ev=>{
+    let data;
+    try{ data=JSON.parse(ev.target.result); }
+    catch(e){ alert('JSONの読み込みに失敗しました'); return; }
+    if(data.version!==1){ alert('対応していないファイル形式です'); return; }
+
+    // 座標スケール: 保存時のキャンバスサイズと現在のキャンバスサイズの比
+    const scX = (cv && data.canvasW) ? cv.width  / data.canvasW : 1;
+    const scY = (cv && data.canvasH) ? cv.height / data.canvasH : 1;
+
+    // 透視タイプ
+    S.type=data.type||'1p';
+    document.querySelectorAll('.tbtn').forEach(b=>{
+      b.classList.toggle('on', b.dataset.t===S.type);
+    });
+    document.getElementById('gridSec').style.display  = (S.type==='1p'||S.type==='2p')?'block':'none';
+    document.getElementById('grid1p').style.display   = S.type==='1p'?'block':'none';
+    document.getElementById('grid2p').style.display   = S.type==='2p'?'block':'none';
+
+    // VP
+    S.vps=(data.vps||[]).map(vp=>({
+      lines: vp.lines.map(l=>({px:l.px*scX, py:l.py*scY, angle:l.angle})),
+      rayColor: vp.rayColor,
+      lc:       vp.lc,
+      dotColor: vp.dotColor,
+      lines_n:  vp.lines_n,
+    }));
+
+    // 共通設定
+    if(data.hl     !==undefined) S.hl=data.hl;
+    if(data.hlPair !==undefined) S.hlPair=data.hlPair;
+    if(data.opacity!==undefined) S.opacity=data.opacity;
+    if(data.lw     !==undefined) S.lw=data.lw;
+    if(data.merge  !==undefined) S.merge=data.merge;
+    if(data.grid){
+      Object.assign(S.grid, data.grid);
+      // スライダーUIを同期
+      const g=S.grid;
+      const setSlider=(id,val)=>{ const el=document.getElementById(id); if(el) el.value=val; };
+      const setText=(id,val)=>{ const el=document.getElementById(id); if(el) el.textContent=val; };
+      setSlider('sl1pV', g.angle1p);    setText('ang1pV', g.angle1p);
+      setSlider('sp1pVs',g.spacing1pV); setText('sp1pV',  g.spacing1pV);
+      setSlider('sp1pHs',g.spacing1pH); setText('sp1pH',  g.spacing1pH);
+      setSlider('sp2pVs',g.spacing2pV); setText('sp2pV',  g.spacing2pV);
+      setSlider('gridOpS',g.opacity);   setText('gridOpV', g.opacity);
+      document.getElementById('gridColor').value=g.color||'#888888';
+      document.getElementById('tog1pV').classList.toggle('on',!!g.show1pV);
+      document.getElementById('tog1pH').classList.toggle('on',!!g.show1pH);
+      document.getElementById('tog2pV').classList.toggle('on',!!g.show2pV);
+    }
+
+
+    // 共通スライダーUI同期
+    const setS=(id,val)=>{ const el=document.getElementById(id); if(el) el.value=val; };
+    const setT=(id,val)=>{ const el=document.getElementById(id); if(el) el.textContent=val; };
+    setS('os', S.opacity); setT('ov', S.opacity);
+    setS('ws', S.lw*10);   setT('wv', S.lw.toFixed(1));
+    document.getElementById('hlTog').classList.toggle('on', S.hl);
+    document.getElementById('mgTog').classList.toggle('on', S.merge);
+
+    renderVPList(); updateHlPairUI(); draw();
+    setSbar('作業ファイルを読み込みました');
+  };
+  reader.readAsText(file);
+}
+
+
+function setSbar(msg){ document.getElementById('sbar').textContent=msg; }
+</script>
+</body>
+</html>
