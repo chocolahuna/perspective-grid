@@ -55,12 +55,12 @@ input[type=color] { width: 28px; height: 22px; border: 1px solid var(--border); 
 .vpc-row input[type=color] { flex-shrink: 0; }
 
 /* canvas */
-.carea { flex: 1; min-width: 0; background: #111118; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.carea { flex: 1; min-width: 0; background: #111118; position: relative; overflow: hidden; }
 #dropZone { width: 580px; height: 400px; border: 2px dashed var(--border); border-radius: 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; color: var(--muted); gap: 10px; transition: border-color .2s; user-select: none; }
 #dropZone.over, #dropZone:hover { border-color: var(--accent); color: var(--text); }
 #dropZone .ic2 { font-size: 48px; opacity: .35; }
-#canvasWrap { display: none; position: relative; }
-#cv { display: block; }
+#canvasWrap { display: none; position: absolute; top: 0; left: 0; transform-origin: 0 0; }
+#cv { display: block; position: absolute; top: 0; left: 0; pointer-events: auto; }
 #lupe { display: none; position: absolute; border-radius: 50%; border: 2px solid #5566ff; overflow: hidden; pointer-events: none; box-shadow: 0 4px 20px rgba(0,0,0,.7); background: #000; }
 .sbar { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(16,16,22,.9); border: 1px solid var(--border); border-radius: 20px; padding: 5px 14px; font-size: 11px; color: var(--muted); pointer-events: none; white-space: nowrap; }
 .pair-btn { background: var(--bg); border: 1px solid var(--border); color: var(--muted); padding: 3px 7px; border-radius: 4px; font-size: 10px; cursor: pointer; }
@@ -87,7 +87,12 @@ input[type=color] { width: 28px; height: 22px; border: 1px solid var(--border); 
         空きをクリック → 消失点を追加<br>
         <kbd>●</kbd> ドラッグ → 支点を移動（拡大鏡表示）<br>
         <kbd>線上</kbd> ドラッグ → 支点中心に回転<br>
-        <kbd>Ctrl+V</kbd> → 画像ペースト
+        <kbd>Ctrl+V</kbd> → 画像ペースト<br>
+        <kbd>Ctrl+Z</kbd> → 元に戻す（2本指タップも可）<br>
+        <kbd>ホイール</kbd> → ズーム<br>
+        <kbd>右ボタン</kbd>ドラッグ → 表示位置移動<br>
+        <button onclick="resetView()" style="margin-top:4px;font-size:10px;padding:2px 8px;background:var(--bg);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer;">表示をリセット</button>
+        <button onclick="applyUndo()" style="margin-top:4px;margin-left:4px;font-size:10px;padding:2px 8px;background:var(--bg);border:1px solid var(--border);color:var(--muted);border-radius:4px;cursor:pointer;">↩ 元に戻す</button>
       </div>
     </div>
     <div class="sec">
@@ -96,6 +101,9 @@ input[type=color] { width: 28px; height: 22px; border: 1px solid var(--border); 
     </div>
     <div class="sec">
       <div class="sec-title">共通設定</div>
+      <div class="lbl">画像の明るさ <b id="brtV">0</b></div>
+      <input type="range" id="brtS" min="-100" max="100" value="0"
+        oninput="S.imgBrightness=+this.value;document.getElementById('brtV').textContent=this.value;draw()">
       <div class="lbl">透明度 <b id="ov">65</b>%</div>
       <input type="range" id="os" min="10" max="100" value="65">
       <div class="lbl">太さ <b id="wv">1.0</b>px</div>
@@ -156,6 +164,10 @@ input[type=color] { width: 28px; height: 22px; border: 1px solid var(--border); 
         <span class="lbl" style="margin:0">背景と合成</span>
         <button class="tog" id="mgTog"></button>
       </div>
+      <div class="trow" style="margin-bottom:8px">
+        <span class="lbl" style="margin:0;font-size:11px">明るさ調整を書き出しに反映</span>
+        <button class="tog" id="brtExpTog"></button>
+      </div>
       <button class="btn btn-p" id="expBtn">PNG書き出し</button>
       <button class="btn btn-s" id="loadBtn">画像を読み込む</button>
       <input type="file" id="fileIn" accept="image/*" style="display:none">
@@ -208,6 +220,7 @@ const S = {
   type:'1p', vps:[],
   len:100, hl:true, hlPair:[0,1],
   opacity:65, lw:1.0, merge:false,
+  imgBrightness:0, brtOnExport:false,
   img:null, imgW:0, imgH:0,
   // 軸グリッド（1点透視：縦横、2点透視：縦のみ）
   grid:{
@@ -225,6 +238,66 @@ const S = {
 // }
 
 let cv, ctx, lupe, lupeCtx, drag=null;
+
+// ======== UNDO ========
+const UNDO_MAX = 30;
+const undoStack = [];
+
+function snapshotVPs(){
+  return S.vps.map(vp=>({
+    lines: vp.lines.map(ln=>({...ln})),
+    rayColor: vp.rayColor,
+    lc: [...vp.lc],
+    dotColor: vp.dotColor,
+    lines_n: vp.lines_n,
+  }));
+}
+
+function pushUndo(){
+  undoStack.push(snapshotVPs());
+  if(undoStack.length > UNDO_MAX) undoStack.shift();
+}
+
+function applyUndo(){
+  if(undoStack.length===0){ setSbar('これ以上戻せません'); return; }
+  const snap=undoStack.pop();
+  S.vps=snap.map(v=>({
+    lines: v.lines.map(ln=>({...ln})),
+    rayColor: v.rayColor,
+    lc: [...v.lc],
+    dotColor: v.dotColor,
+    lines_n: v.lines_n,
+  }));
+  renderVPList(); updateHlPairUI(); draw();
+  setSbar('元に戻しました');
+}
+
+// ======== VIEW (zoom/pan) ========
+// VP座標は「画像の左上=(0,0)」の論理座標系
+// 画面上の位置 = VIEW.tx + x * VIEW.scale
+const VIEW = { scale:1, tx:0, ty:0 };
+let panDrag=null; // 右ボタンパン用
+
+function applyViewCSS(){
+  if(cv) draw();
+}
+function resetView(){
+  if(!S.imgW) return;
+  const area=document.getElementById('carea');
+  const sc=Math.min((area.clientWidth-40)/S.imgW,(area.clientHeight-40)/S.imgH,1);
+  VIEW.scale=sc;
+  VIEW.tx=Math.round((area.clientWidth  - S.imgW*sc)/2);
+  VIEW.ty=Math.round((area.clientHeight - S.imgH*sc)/2);
+  if(cv) draw();
+}
+// スクリーン座標→VP論理座標（画像左上が原点）
+function screenToCanvas(sx,sy){
+  const ar=document.getElementById('carea').getBoundingClientRect();
+  return {
+    x:(sx - ar.left - VIEW.tx) / VIEW.scale,
+    y:(sy - ar.top  - VIEW.ty) / VIEW.scale,
+  };
+}
 
 // hex色+透明度→rgba文字列
 function rgba(hex,a){
@@ -269,6 +342,7 @@ window.addEventListener('load', () => {
 
   document.getElementById('hlTog').addEventListener('click', function(){ S.hl=!S.hl; this.classList.toggle('on',S.hl); draw(); });
   document.getElementById('mgTog').addEventListener('click', function(){ S.merge=!S.merge; this.classList.toggle('on',S.merge); });
+  document.getElementById('brtExpTog').addEventListener('click', function(){ S.brtOnExport=!S.brtOnExport; this.classList.toggle('on',S.brtOnExport); });
   document.getElementById('loadBtn').addEventListener('click', ()=>document.getElementById('fileIn').click());
   document.getElementById('fileIn').addEventListener('change', e=>{ if(e.target.files[0]) loadFile(e.target.files[0]); });
   document.getElementById('expBtn').addEventListener('click', doExport);
@@ -293,6 +367,14 @@ window.addEventListener('load', () => {
       if(item.type.startsWith('image/')){ loadFile(item.getAsFile()); break; }
     }
   });
+
+  // Ctrl+Z でUndo
+  document.addEventListener('keydown', e=>{
+    if((e.ctrlKey||e.metaKey) && e.key==='z'){
+      e.preventDefault();
+      applyUndo();
+    }
+  });
 });
 
 // ======== FILE LOAD ========
@@ -306,9 +388,15 @@ function setupCanvas(img){
   lupe=document.getElementById('lupe'); lupeCtx=lupe.getContext('2d');
 
   const area=document.getElementById('carea');
-  const sc=Math.min((area.clientWidth-40)/img.width,(area.clientHeight-40)/img.height,1);
   S.img=img; S.imgW=img.width; S.imgH=img.height;
-  cv.width=Math.round(img.width*sc); cv.height=Math.round(img.height*sc);
+  // キャンバスをcarea全体サイズに設定（画像の外まで描画できる）
+  cv.width=area.clientWidth; cv.height=area.clientHeight;
+
+  // 初期表示スケール（エリアに収まるサイズ）
+  const sc=Math.min((area.clientWidth-40)/img.width,(area.clientHeight-40)/img.height,1);
+  VIEW.scale=sc;
+  VIEW.tx=Math.round((area.clientWidth  - img.width*sc)/2);
+  VIEW.ty=Math.round((area.clientHeight - img.height*sc)/2);
 
   lupe.width=LUPE_SIZE; lupe.height=LUPE_SIZE;
   lupe.style.width=LUPE_SIZE+'px'; lupe.style.height=LUPE_SIZE+'px';
@@ -318,10 +406,31 @@ function setupCanvas(img){
   document.getElementById('sbar').textContent=img.width+' × '+img.height+' px';
 
   S.vps=[]; renderVPList(); updateHlPairUI();
+  cv.onmousedown=e=>{ if(e.button===2){onDown_pan(e);}else{onDown(e);} };
+  window.onmousemove=e=>{ onMove_pan(e); onMove(e); };
+  window.onmouseup=e=>{ if(e.button===2){onUp(e);}else{onUp(e);} };
+  cv.ondblclick=e=>{ const {x,y}=cvXY(e); if(hitHorizonLine(x,y)) levelHorizon(y); };
+
+  // ホイールズーム
+  const carea=document.getElementById('carea');
+  carea.addEventListener('wheel', onWheel, {passive:false});
+  // 右クリックパン（contextmenu抑制）
+  carea.addEventListener('contextmenu', e=>e.preventDefault());
+  // タッチ（ピンチ・2本指パン）
+  carea.addEventListener('touchstart', onTouchStart, {passive:false});
+  carea.addEventListener('touchmove',  onTouchMove,  {passive:false});
+  carea.addEventListener('touchend',   onTouchEnd,   {passive:false});
+
+  // ウィンドウリサイズ時にキャンバスをcareaに追従
+  const resizeObs = new ResizeObserver(()=>{
+    if(!S.imgW) return;
+    const a=document.getElementById('carea');
+    cv.width=a.clientWidth; cv.height=a.clientHeight;
+    draw();
+  });
+  resizeObs.observe(document.getElementById('carea'));
+
   draw();
-  cv.onmousedown=onDown;
-  window.onmousemove=onMove;
-  window.onmouseup=onUp;
 }
 
 // ======== VP CARDS ========
@@ -357,6 +466,7 @@ function renderVPList(){
 
 function addVP(cx,cy){
   if(S.vps.length>=VPMAX[S.type]){ setSbar('消失点の上限に達しました'); return; }
+  pushUndo();
   const ci=S.vps.length;
   const ox=80, oy=60;
   S.vps.push({
@@ -372,10 +482,10 @@ function addVP(cx,cy){
   renderVPList(); updateHlPairUI(); draw();
   setSbar('支点をドラッグ→移動（拡大表示）　線上をドラッグ→回転');
 }
-function removeVP(vi){ S.vps.splice(vi,1); renderVPList(); updateHlPairUI(); draw(); }
+function removeVP(vi){ pushUndo(); S.vps.splice(vi,1); renderVPList(); updateHlPairUI(); draw(); }
 
 // ======== HIT TEST ========
-function cvXY(e){ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+function cvXY(e){ return screenToCanvas(e.clientX, e.clientY); }
 
 // VP交点マーカーのヒットテスト
 function hitVP(x,y){
@@ -408,13 +518,22 @@ function hitLine(x,y){
   return null;
 }
 
+// ダブルクリック検出用（アイレベル線上のダブルクリックでVP追加しないため）
+let _lastDownTime=0, _lastDownX=0, _lastDownY=0;
+
 // ======== MOUSE ========
 function onDown(e){
   const {x,y}=cvXY(e);
 
+  // ダブルクリック判定（300ms・10px以内の2回目は addVP をスキップ）
+  const now=Date.now();
+  const isDbClick=(now-_lastDownTime<300 && Math.hypot(x-_lastDownX,y-_lastDownY)<10/VIEW.scale);
+  _lastDownTime=now; _lastDownX=x; _lastDownY=y;
+
   // VP交点マーカーを優先ヒット
   let h=hitVP(x,y);
   if(h){
+    pushUndo();
     drag={...h, ox:x-h.pt.x, oy:y-h.pt.y};
     cv.style.cursor='none';
     e.preventDefault();
@@ -423,6 +542,7 @@ function onDown(e){
 
   h=hitPivot(x,y)||hitLine(x,y);
   if(h){
+    pushUndo();
     drag={...h};
     if(h.mode==='pivot'){
       const ln=S.vps[h.vi].lines[h.li];
@@ -432,6 +552,18 @@ function onDown(e){
     e.preventDefault();
     return;
   }
+
+  // アイレベル線のドラッグ（ダブルクリック2回目は除外）
+  if(!isDbClick && hitHorizonLine(x,y)){
+    pushUndo();
+    drag={mode:'horizon', startX:x, startY:y};
+    cv.style.cursor='move';
+    e.preventDefault();
+    return;
+  }
+
+  // ダブルクリック2回目はVP追加しない
+  if(isDbClick) return;
   addVP(x,y);
 }
 
@@ -439,14 +571,32 @@ function onMove(e){
   if(!drag){
     if(e.target!==cv) return;
     const {x,y}=cvXY(e);
-    if(hitVP(x,y))          cv.style.cursor='move';
-    else if(hitPivot(x,y))  cv.style.cursor='grab';
-    else if(hitLine(x,y))   cv.style.cursor=rotateCursor;
-    else                    cv.style.cursor='crosshair';
+    if(hitVP(x,y))              cv.style.cursor='move';
+    else if(hitPivot(x,y))      cv.style.cursor='grab';
+    else if(hitLine(x,y))       cv.style.cursor=rotateCursor;
+    else if(hitHorizonLine(x,y)) cv.style.cursor='move';
+    else                        cv.style.cursor='crosshair';
     hideLupe();
     return;
   }
   const {x,y}=cvXY(e);
+
+  if(drag.mode==='horizon'){
+    // アイレベルを平行移動：hlPair の各VPをΔX・ΔY分だけ移動（支点固定・角度再計算）
+    const dx=x-drag.startX, dy=y-drag.startY;
+    drag.startX=x; drag.startY=y; // 差分方式で毎フレーム更新
+    const pts=S.vps.map(vp=>intersect(vp.lines[0],vp.lines[1]));
+    const indices = S.vps.length===1 ? [0] : S.hlPair;
+    indices.forEach(vi=>{
+      const pt=pts[vi]; if(!pt) return;
+      const newVP={x:pt.x+dx, y:pt.y+dy};
+      S.vps[vi].lines.forEach(ln=>{
+        ln.angle=Math.atan2(newVP.y-ln.py, newVP.x-ln.px);
+      });
+    });
+    draw(); renderVPList();
+    return;
+  }
 
   if(drag.mode==='vp'){
     // VP交点を新しい位置へ移動：各線の支点は固定、角度だけ追従
@@ -460,9 +610,17 @@ function onMove(e){
     return;
   }
 
-  const ln=S.vps[drag.vi].lines[drag.li];
+  const vp=S.vps[drag.vi];
+  const ln=vp.lines[drag.li];
   if(drag.mode==='pivot'){
+    // 移動前にVP位置を保存
+    const pt=intersect(vp.lines[0],vp.lines[1]);
+    // 支点を移動
     ln.px=x-drag.ox; ln.py=y-drag.oy;
+    // VPが存在した場合、その位置を固定するよう角度を再計算
+    if(pt){
+      ln.angle=Math.atan2(pt.y-ln.py, pt.x-ln.px);
+    }
     showLupe(ln.px, ln.py);
   } else {
     ln.angle=Math.atan2(y-ln.py, x-ln.px);
@@ -470,10 +628,90 @@ function onMove(e){
   }
   draw(); renderVPList();
 }
-function onUp(){
+function onUp(e){
+  if(panDrag){ panDrag=null; return; }
   drag=null;
   cv.style.cursor='crosshair';
   hideLupe();
+}
+
+// ======== WHEEL ZOOM ========
+function onWheel(e){
+  e.preventDefault();
+  const carea=document.getElementById('carea');
+  const ar=carea.getBoundingClientRect();
+
+  // ズーム倍率
+  const delta = e.deltaY < 0 ? 1.1 : 1/1.1;
+  const newScale = Math.min(Math.max(VIEW.scale * delta, 0.1), 20);
+
+  // カーソル位置を中心にズーム
+  const mx = e.clientX - ar.left;
+  const my = e.clientY - ar.top;
+  // ズーム前のcanvasWrap左上スクリーン座標
+  VIEW.tx = mx - (mx - VIEW.tx) * (newScale / VIEW.scale);
+  VIEW.ty = my - (my - VIEW.ty) * (newScale / VIEW.scale);
+  VIEW.scale = newScale;
+  applyViewCSS();
+}
+
+// ======== RIGHT-BUTTON PAN ========
+function onDown_pan(e){
+  if(e.button!==2) return;
+  panDrag={sx:e.clientX, sy:e.clientY, tx:VIEW.tx, ty:VIEW.ty};
+}
+function onMove_pan(e){
+  if(!panDrag) return;
+  VIEW.tx = panDrag.tx + (e.clientX - panDrag.sx);
+  VIEW.ty = panDrag.ty + (e.clientY - panDrag.sy);
+  applyViewCSS();
+}
+
+// ======== TOUCH (PINCH / 2-FINGER PAN) ========
+let touches={};
+let _twoFingerTapStart=0; // 2本指タップ検出用
+
+function onTouchStart(e){
+  e.preventDefault();
+  for(const t of e.changedTouches) touches[t.identifier]={x:t.clientX,y:t.clientY};
+  // 2本指タップ開始を記録
+  if(e.touches.length===2) _twoFingerTapStart=Date.now();
+}
+function onTouchMove(e){
+  e.preventDefault();
+  const ids=Object.keys(touches);
+  if(e.touches.length===2 && ids.length===2){
+    const a0=touches[e.touches[0].identifier]||{x:e.touches[0].clientX,y:e.touches[0].clientY};
+    const b0=touches[e.touches[1].identifier]||{x:e.touches[1].clientX,y:e.touches[1].clientY};
+    const a1={x:e.touches[0].clientX,y:e.touches[0].clientY};
+    const b1={x:e.touches[1].clientX,y:e.touches[1].clientY};
+    const d0=Math.hypot(b0.x-a0.x,b0.y-a0.y);
+    const d1=Math.hypot(b1.x-a1.x,b1.y-a1.y);
+    const carea=document.getElementById('carea');
+    const ar=carea.getBoundingClientRect();
+    // 中点
+    const mx0=(a0.x+b0.x)/2-ar.left, my0=(a0.y+b0.y)/2-ar.top;
+    const mx1=(a1.x+b1.x)/2-ar.left, my1=(a1.y+b1.y)/2-ar.top;
+    if(d0>1){
+      const delta=d1/d0;
+      const newScale=Math.min(Math.max(VIEW.scale*delta,0.1),20);
+      VIEW.tx=mx1-(mx0-VIEW.tx)*(newScale/VIEW.scale);
+      VIEW.ty=my1-(my0-VIEW.ty)*(newScale/VIEW.scale);
+      VIEW.scale=newScale;
+    } else {
+      VIEW.tx+=mx1-mx0; VIEW.ty+=my1-my0;
+    }
+    applyViewCSS();
+  }
+  for(const t of e.changedTouches) touches[t.identifier]={x:t.clientX,y:t.clientY};
+}
+function onTouchEnd(e){
+  // 2本指タップ判定：2本指で始まり、300ms以内にリリース
+  if(_twoFingerTapStart>0 && e.touches.length===0 && Object.keys(touches).length===2){
+    if(Date.now()-_twoFingerTapStart<300) applyUndo();
+  }
+  _twoFingerTapStart=0;
+  for(const t of e.changedTouches) delete touches[t.identifier];
 }
 
 // ======== LUPE (拡大鏡) ========
@@ -501,11 +739,14 @@ function showLupe(px, py){
   lupeCtx.arc(LS/2,LS/2,LS/2,0,Math.PI*2);
   lupeCtx.clip();
 
-  // 背景画像
+  // 背景画像（lupeは論理座標px,pyを中心にZx拡大）
   if(S.img){
-    const sx=px - LS/(Z*2), sy=py - LS/(Z*2);
-    const sw=LS/Z, sh=LS/Z;
-    lupeCtx.drawImage(cv, sx,sy,sw,sh, 0,0,LS,LS);
+    // cvにはVIEW変換が掛かっている。論理座標→スクリーン変換してcvから切り取る
+    const csx = VIEW.tx + px*VIEW.scale;
+    const csy = VIEW.ty + py*VIEW.scale;
+    const sw = LS/Z, sh = LS/Z;  // cv上のピクセル数（VIEW.scale込み）
+    const srcW = sw, srcH = sh;
+    lupeCtx.drawImage(cv, csx-sw/2, csy-sh/2, srcW, srcH, 0,0,LS,LS);
   }
 
   // 支点の場所に十字マーカー（拡大鏡中央）
@@ -529,6 +770,56 @@ function hideLupe(){
   if(lupe) lupe.style.display='none';
 }
 
+// ======== HORIZON LEVEL ========
+// アイレベル線上かどうかのヒット判定（論理座標、しきい値8px）
+function hitHorizonLine(x,y){
+  if(!S.hl || S.vps.length===0) return false;
+  const pts=S.vps.map(vp=>intersect(vp.lines[0],vp.lines[1]));
+  const THR=8/VIEW.scale; // スクリーン8px相当を論理座標に換算
+  if(S.vps.length===1){
+    const pt=pts[0]; if(!pt) return false;
+    return Math.abs(y-pt.y)<=THR;
+  }
+  // 2点以上: hlPair の2点を通る直線との距離
+  const [ai,bi]=S.hlPair;
+  const pa=pts[ai],pb=pts[bi]; if(!pa||!pb) return false;
+  const dx=pb.x-pa.x, dy=pb.y-pa.y;
+  const len=Math.hypot(dx,dy); if(len<0.01) return false;
+  // 点(x,y)から直線pa-pbへの距離
+  const dist=Math.abs((pb.y-pa.y)*x-(pb.x-pa.x)*y+pb.x*pa.y-pb.y*pa.x)/len;
+  return dist<=THR;
+}
+
+// アイレベルを clickY で水平化し、全VPをアイレベル上に乗せる
+function levelHorizon(clickY){
+  if(!S.hl || S.vps.length===0) return;
+  pushUndo();
+  const pts=S.vps.map(vp=>intersect(vp.lines[0],vp.lines[1]));
+
+  if(S.vps.length===1){
+    // 1点透視: VP の Y を clickY に移動（X はそのまま）
+    const pt=pts[0]; if(!pt) return;
+    const newVP={x:pt.x, y:clickY};
+    const vp=S.vps[0];
+    vp.lines.forEach(ln=>{
+      ln.angle=Math.atan2(newVP.y-ln.py, newVP.x-ln.px);
+    });
+  } else {
+    // 2点以上: hlPair の各VPを y=clickY に移動（X は元のまま）
+    const [ai,bi]=S.hlPair;
+    [ai,bi].forEach(vi=>{
+      const pt=pts[vi]; if(!pt) return;
+      const newVP={x:pt.x, y:clickY};
+      S.vps[vi].lines.forEach(ln=>{
+        ln.angle=Math.atan2(newVP.y-ln.py, newVP.x-ln.px);
+      });
+    });
+    // hlPair 以外の VP はアイレベル上に乗せる必要なし（3点透視など）
+  }
+  draw(); renderVPList();
+  setSbar('アイレベルを水平にしました（ダブルクリックした高さ）');
+}
+
 // ======== GEOMETRY ========
 function intersect(la,lb){
   const dax=Math.cos(la.angle),day=Math.sin(la.angle);
@@ -543,9 +834,40 @@ function intersect(la,lb){
 // ======== DRAW ========
 function draw(){
   if(!cv) return;
-  const W=cv.width, H=cv.height;
-  ctx.clearRect(0,0,W,H);
-  if(S.img) ctx.drawImage(S.img,0,0,W,H);
+  const CW=cv.width, CH=cv.height;
+  const W=S.imgW||CW, H=S.imgH||CH;
+  // リセットしてキャンバス全体クリア
+  ctx.setTransform(1,0,0,1,0,0);
+  ctx.fillStyle='#1a1a22';
+  ctx.fillRect(0,0,CW,CH);
+  // VIEW変換（以降の座標は論理座標系 = 画像座標系）
+  ctx.setTransform(VIEW.scale,0,0,VIEW.scale,VIEW.tx,VIEW.ty);
+  // 画像の描画（論理座標の0,0〜W,Hに）
+  if(S.img) {
+    // 明るさフィルター: 0=通常, -100=黒, +100=白
+    const bv = S.imgBrightness;
+    if(bv===0){
+      ctx.filter='none';
+      ctx.drawImage(S.img,0,0,W,H);
+    } else if(bv>0){
+      // 明るく: 通常描画の上に白を重ねる
+      ctx.filter='none';
+      ctx.drawImage(S.img,0,0,W,H);
+      ctx.fillStyle=`rgba(255,255,255,${bv/100})`;
+      ctx.fillRect(0,0,W,H);
+    } else {
+      // 暗く: 通常描画の上に黒を重ねる
+      ctx.filter='none';
+      ctx.drawImage(S.img,0,0,W,H);
+      ctx.fillStyle=`rgba(0,0,0,${(-bv)/100})`;
+      ctx.fillRect(0,0,W,H);
+    }
+    ctx.filter='none';
+  } else {
+    // 画像なし時はグレー背景
+    ctx.fillStyle='#2a2a35';
+    ctx.fillRect(0,0,W,H);
+  }
 
   if(S.hl && S.vps.length>0) drawHorizonLine();
 
@@ -563,6 +885,8 @@ function draw(){
     const ln=S.vps[drag.vi].lines[drag.li];
     showLupe(ln.px,ln.py);
   }
+  // 変換をリセット
+  ctx.setTransform(1,0,0,1,0,0);
 }
 
 function drawParallelLines(ux,uy,origin,spacing,W,H,c){
@@ -924,7 +1248,15 @@ function doExport(){
   const oc=document.createElement('canvas'); oc.width=W; oc.height=H;
   const oc2=oc.getContext('2d');
   const sc2=W/cv.width;
-  if(S.merge) oc2.drawImage(S.img,0,0,W,H);
+  if(S.merge){
+    oc2.drawImage(S.img,0,0,W,H);
+    // 明るさ調整を書き出しに反映する場合
+    if(S.brtOnExport && S.imgBrightness!==0){
+      const bv=S.imgBrightness;
+      oc2.fillStyle=bv>0?`rgba(255,255,255,${bv/100})`:`rgba(0,0,0,${(-bv)/100})`;
+      oc2.fillRect(0,0,W,H);
+    }
+  }
   oc2.save(); oc2.scale(sc2,sc2);
   if(S.hl && S.vps.length>0){
     const pts=S.vps.map(vp=>intersect(vp.lines[0],vp.lines[1]));
@@ -1024,11 +1356,13 @@ function saveProject(){
       dotColor: vp.dotColor,
       lines_n:  vp.lines_n,
     })),
-    hl:      S.hl,
-    hlPair:  S.hlPair,
-    opacity: S.opacity,
-    lw:      S.lw,
-    merge:   S.merge,
+    hl:           S.hl,
+    hlPair:       S.hlPair,
+    opacity:      S.opacity,
+    imgBrightness:S.imgBrightness,
+    brtOnExport:  S.brtOnExport,
+    lw:           S.lw,
+    merge:        S.merge,
     grid:    {...S.grid},
     // キャンバスサイズ（読み込み時の座標スケール計算用）
     canvasW: cv ? cv.width  : 0,
@@ -1076,10 +1410,12 @@ function loadProject(file){
     }));
 
     // 共通設定
-    if(data.hl     !==undefined) S.hl=data.hl;
-    if(data.hlPair !==undefined) S.hlPair=data.hlPair;
-    if(data.opacity!==undefined) S.opacity=data.opacity;
-    if(data.lw     !==undefined) S.lw=data.lw;
+    if(data.hl            !==undefined) S.hl=data.hl;
+    if(data.hlPair        !==undefined) S.hlPair=data.hlPair;
+    if(data.opacity       !==undefined) S.opacity=data.opacity;
+    if(data.imgBrightness !==undefined) S.imgBrightness=data.imgBrightness;
+    if(data.brtOnExport   !==undefined) S.brtOnExport=data.brtOnExport;
+    if(data.lw            !==undefined) S.lw=data.lw;
     if(data.merge  !==undefined) S.merge=data.merge;
     if(data.grid){
       Object.assign(S.grid, data.grid);
@@ -1103,9 +1439,11 @@ function loadProject(file){
     const setS=(id,val)=>{ const el=document.getElementById(id); if(el) el.value=val; };
     const setT=(id,val)=>{ const el=document.getElementById(id); if(el) el.textContent=val; };
     setS('os', S.opacity); setT('ov', S.opacity);
+    setS('brtS', S.imgBrightness); setT('brtV', S.imgBrightness);
     setS('ws', S.lw*10);   setT('wv', S.lw.toFixed(1));
     document.getElementById('hlTog').classList.toggle('on', S.hl);
     document.getElementById('mgTog').classList.toggle('on', S.merge);
+    document.getElementById('brtExpTog').classList.toggle('on', S.brtOnExport);
 
     renderVPList(); updateHlPairUI(); draw();
     setSbar('作業ファイルを読み込みました');
