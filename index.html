@@ -900,20 +900,37 @@ function drawParallelLines(ux,uy,origin,spacing,W,H,c){
   c.lineWidth=S.lw*0.7;
   c.setLineDash([]);
 
-  // originからnx,ny方向にspacing刻みで線を引く
-  // キャンバス対角線の長さ分だけカバー
-  const diag=Math.hypot(W,H);
-  const steps=Math.ceil(diag/spacing)+2;
+  // 描画対象の領域（論理座標）: 画像範囲 + 実際に見えているキャンバス範囲
+  // originが画面外（2点透視でVPが遠い場合など）でも、見えている範囲を必ずカバーする
+  const corners=[[0,0],[W,0],[0,H],[W,H]];
+  try{
+    const inv=c.getTransform().inverse();
+    const cw=c.canvas.width, ch=c.canvas.height;
+    [[0,0],[cw,0],[0,ch],[cw,ch]].forEach(([x,y])=>{
+      corners.push([inv.a*x+inv.c*y+inv.e, inv.b*x+inv.d*y+inv.f]);
+    });
+  }catch(e){}
 
-  for(let k=-steps;k<=steps;k++){
+  // 各角をorigin基準で 線方向(u)・法線方向(n) に射影して範囲を求める
+  let nMin=Infinity,nMax=-Infinity,uMin=Infinity,uMax=-Infinity;
+  corners.forEach(([x,y])=>{
+    const dx=x-origin.x, dy=y-origin.y;
+    const pn=dx*nx+dy*ny, pu=dx*ux+dy*uy;
+    nMin=Math.min(nMin,pn); nMax=Math.max(nMax,pn);
+    uMin=Math.min(uMin,pu); uMax=Math.max(uMax,pu);
+  });
+  const kMin=Math.floor(nMin/spacing)-1, kMax=Math.ceil(nMax/spacing)+1;
+  // 間隔が極端に狭い時の暴走防止
+  if(kMax-kMin>5000){ c.restore(); return; }
+
+  for(let k=kMin;k<=kMax;k++){
     // k番目の線の基準点
     const bx=origin.x+nx*spacing*k;
     const by=origin.y+ny*spacing*k;
-    // この点を通りux,uy方向の直線をキャンバス端まで延長
-    const big=diag*2;
+    // この点を通りux,uy方向の直線を表示範囲の端まで延長
     c.beginPath();
-    c.moveTo(bx-ux*big, by-uy*big);
-    c.lineTo(bx+ux*big, by+uy*big);
+    c.moveTo(bx+ux*(uMin-10), by+uy*(uMin-10));
+    c.lineTo(bx+ux*(uMax+10), by+uy*(uMax+10));
     c.stroke();
   }
   c.restore();
