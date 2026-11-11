@@ -1264,7 +1264,7 @@ function doExport(){
   const W=S.imgW,H=S.imgH;
   const oc=document.createElement('canvas'); oc.width=W; oc.height=H;
   const oc2=oc.getContext('2d');
-  const sc2=W/cv.width;
+
   if(S.merge){
     oc2.drawImage(S.img,0,0,W,H);
     // 明るさ調整を書き出しに反映する場合
@@ -1274,18 +1274,18 @@ function doExport(){
       oc2.fillRect(0,0,W,H);
     }
   }
-  oc2.save(); oc2.scale(sc2,sc2);
+  // 座標はすべて画像座標系（画面表示のVIEW変換前と同じ）なので、そのまま描画する
   if(S.hl && S.vps.length>0){
     const pts=S.vps.map(vp=>intersect(vp.lines[0],vp.lines[1]));
-    let doLine=false, x0=0,y0=0,x1=cv.width,y1=0;
+    let doLine=false, x0=0,y0=0,x1=W,y1=0;
     if(S.vps.length===1){
       const pt=pts[0]; if(pt){ doLine=true; y0=pt.y; y1=pt.y; }
     } else {
       const [ai,bi]=S.hlPair; const pa=pts[ai],pb=pts[bi];
       if(pa&&pb){
         doLine=true;
-        if(Math.abs(pb.x-pa.x)<0.01){ x0=pa.x;x1=pa.x;y0=0;y1=cv.height; }
-        else{ const sl=(pb.y-pa.y)/(pb.x-pa.x); y0=pa.y+sl*(0-pa.x); y1=pa.y+sl*(cv.width-pa.x); }
+        if(Math.abs(pb.x-pa.x)<0.01){ x0=pa.x;x1=pa.x;y0=0;y1=H; }
+        else{ const sl=(pb.y-pa.y)/(pb.x-pa.x); y0=pa.y+sl*(0-pa.x); y1=pa.y+sl*(W-pa.x); }
       }
     }
     if(doLine){
@@ -1295,65 +1295,14 @@ function doExport(){
       oc2.setLineDash([]); oc2.restore();
     }
   }
+  // 分割線: 画面表示と同じ関数・同じ範囲（画像サイズ）で描画
   S.vps.forEach(vp=>{
     const pt=intersect(vp.lines[0],vp.lines[1]);
-    if(!pt) return;
-    const n=vp.lines_n, W2=cv.width, H2=cv.height;
-    const big=Math.hypot(W2,H2)*3;
-    const inC=pt.x>=-1&&pt.x<=W2+1&&pt.y>=-1&&pt.y<=H2+1;
-    const GAP=inC?Math.max(12,Math.min(40,Math.hypot(W2,H2)*0.018)):0;
-    oc2.save();
-    oc2.strokeStyle=rgba(vp.rayColor,S.opacity);
-    oc2.lineWidth=S.lw; oc2.lineCap='round';
-
-    const SAMPLES=Math.max(n*20,1000);
-    const perim=2*(W2+H2);
-    function ep(t){ if(t<W2) return {x:t,y:0}; if(t<W2+H2) return {x:W2,y:t-W2}; if(t<2*W2+H2) return {x:W2-(t-W2-H2),y:H2}; return {x:0,y:H2-(t-2*W2-H2)}; }
-    const baseA=Math.atan2(H2/2-pt.y,W2/2-pt.x);
-    const samps=[];
-    for(let i=0;i<=SAMPLES;i++){
-      const p=ep((i/SAMPLES)*perim);
-      let rel=Math.atan2(p.y-pt.y,p.x-pt.x)-baseA;
-      while(rel<-Math.PI)rel+=2*Math.PI; while(rel>Math.PI)rel-=2*Math.PI;
-      samps.push({p,rel});
-    }
-    samps.sort((a,b)=>a.rel-b.rel);
-    const minR=samps[0].rel,maxR=samps[samps.length-1].rel,span=maxR-minR;
-    if(inC){
-      // 画面内VP: 360度均等分割
-      for(let i=0;i<n;i++){
-        const a=(Math.PI*2/n)*i,ux=Math.cos(a),uy=Math.sin(a);
-        if(GAP>0){
-          oc2.beginPath();oc2.moveTo(pt.x-ux*big,pt.y-uy*big);oc2.lineTo(pt.x-ux*GAP,pt.y-uy*GAP);oc2.stroke();
-          oc2.beginPath();oc2.moveTo(pt.x+ux*GAP,pt.y+uy*GAP);oc2.lineTo(pt.x+ux*big,pt.y+uy*big);oc2.stroke();
-        } else {
-          oc2.beginPath();oc2.moveTo(pt.x-ux*big,pt.y-uy*big);oc2.lineTo(pt.x+ux*big,pt.y+uy*big);oc2.stroke();
-        }
-      }
-    } else if(span>1e-6){
-      // 画面外VP: 外周角度均等分割
-      for(let i=0;i<n;i++){
-        const target=minR+span*(i+0.5)/n;
-        let lo=0,hi=samps.length-1;
-        while(lo<hi){const mid=(lo+hi)>>1;if(samps[mid].rel<target)lo=mid+1;else hi=mid;}
-        const p=samps[lo].p;
-        const dx=pt.x-p.x,dy=pt.y-p.y,d=Math.hypot(dx,dy);
-        if(d<0.01)continue;
-        const ux=dx/d,uy=dy/d;
-        oc2.beginPath();oc2.moveTo(p.x-ux*big,p.y-uy*big);oc2.lineTo(p.x+ux*big,p.y+uy*big);oc2.stroke();
-      }
-    }
-    if(GAP>0){
-      const cs=GAP*0.7;
-      oc2.lineWidth=Math.max(1,S.lw*1.5);oc2.strokeStyle=rgba(vp.rayColor,Math.min(100,S.opacity+20));
-      oc2.beginPath();oc2.moveTo(pt.x-cs,pt.y);oc2.lineTo(pt.x+cs,pt.y);oc2.moveTo(pt.x,pt.y-cs);oc2.lineTo(pt.x,pt.y+cs);oc2.stroke();
-    }
-    oc2.restore();
+    if(pt) drawRays(pt,vp.rayColor,vp.lines_n,W,H,oc2);
   });
   // 軸グリッドをExport
-  if(S.type==='1p') drawGrid1pExport(cv.width,cv.height,oc2);
-  if(S.type==='2p') drawGrid2pExport(cv.width,cv.height,oc2);
-  oc2.restore();
+  if(S.type==='1p') drawGrid1pExport(W,H,oc2);
+  if(S.type==='2p') drawGrid2pExport(W,H,oc2);
   oc.toBlob(blob=>{
     const url=URL.createObjectURL(blob),a=document.createElement('a');
     a.href=url; a.download='perspective_grid_'+S.type+'.png'; a.click();
@@ -1404,9 +1353,10 @@ function loadProject(file){
     catch(e){ alert('JSONの読み込みに失敗しました'); return; }
     if(data.version!==1){ alert('対応していないファイル形式です'); return; }
 
-    // 座標スケール: 保存時のキャンバスサイズと現在のキャンバスサイズの比
-    const scX = (cv && data.canvasW) ? cv.width  / data.canvasW : 1;
-    const scY = (cv && data.canvasH) ? cv.height / data.canvasH : 1;
+    // 座標スケール: VP座標は画像座標系なので、保存時と現在の「画像サイズ」の比で合わせる
+    // （キャンバス＝ウィンドウサイズは無関係。同じ画像なら等倍）
+    const scX = (S.imgW && data.imgW) ? S.imgW / data.imgW : 1;
+    const scY = (S.imgH && data.imgH) ? S.imgH / data.imgH : 1;
 
     // 透視タイプ
     S.type=data.type||'1p';
